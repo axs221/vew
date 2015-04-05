@@ -24,7 +24,7 @@ class App(object):
 
     def on_keypress(self, input):
         if (input == 'enter'):
-            listbox = DiffView()
+            listbox = DiffView(self.current_listbox.content[self.current_listbox.focus_position].commit)
             listbox.show_key = urwid.Text("Press any key", wrap='clip')
             self.current_listbox = listbox
             self.top.contents['body'] = ( listbox, None )
@@ -77,6 +77,43 @@ class GitView(urwid.ListBox):
             idx = idx - 1
             self.set_focus(idx)
 
+class LogLinesBuilder(object):
+    def __init__(self):
+        self.lines = []
+        self.current_commit = 'd843714290be3cdb50ba1d5c80da06971051bb09'
+
+    def add_line(self, text):
+        decorated = self.decorate(text)
+        decorated.commit = self.current_commit
+        self.lines.append(decorated)
+        return self
+
+    def build(self):
+        lines = self.lines
+        self.lines = []
+        return lines
+
+    def decorate(self, text):
+        line = urwid.Text(text)
+        new_map = lambda attr: urwid.AttrMap(line, attr, 'reveal focus')
+        if (re.match('^-', text)):
+            return new_map('deleted')
+        elif (re.match('^\+', text)):
+            return new_map('added')
+        elif (re.match('^log', text)):
+            return new_map('log')
+        return new_map('normal')
+
+
+class LogLine(object):
+    
+    def __init__(self, text, commit):
+        self.text = text
+        self.commit = commit
+
+    def __str__(self):
+        return self.text
+    
 
 class LogView(GitView):
 
@@ -96,22 +133,14 @@ class LogView(GitView):
             "git log"
             , shell=True, stdout=subprocess.PIPE).stdout.read()
         lines = log.split('\n')
-        return [ self.decorate(line) for line in lines ]
-
-    def decorate(self, text):
-        line = urwid.Text(text)
-        new_map = lambda attr: urwid.AttrMap(line, attr, 'reveal focus')
-        if (re.match('^-', text)):
-            return new_map('deleted')
-        elif (re.match('^\+', text)):
-            return new_map('added')
-        elif (re.match('^log', text)):
-            return new_map('log')
-        return new_map('normal')
+        builder = LogLinesBuilder()
+        [ builder.add_line(line) for line in lines ]
+        return builder.build()
 
 class DiffView(GitView):
 
-    def __init__(self):
+    def __init__(self, commit):
+        self.commit = commit
         log = self.get()
         content = urwid.SimpleListWalker(log)
 
@@ -120,7 +149,7 @@ class DiffView(GitView):
 
     def get(self):
         diff = subprocess.Popen(
-            "git diff HEAD^^..HEAD"
+            "git diff " + self.commit + "..HEAD"
             , shell=True, stdout=subprocess.PIPE).stdout.read()
         lines = diff.split('\n')
         return [ self.decorate(line) for line in lines ]
