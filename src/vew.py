@@ -4,16 +4,15 @@ import subprocess
 import re
 
 class App(object):
+
     def run_app(self):
 
         items = [urwid.Text("foo"),
                 urwid.Text("bar"),
                 urwid.Text("baz")]
 
-        diff = self.get_diff()
-        print diff
-        content = urwid.SimpleListWalker([
-            urwid.AttrMap(w, 'normal', 'reveal focus') for w in diff])
+        log = self.get_log()
+        content = urwid.SimpleListWalker(log)
 
         listbox = LogView(content)
 
@@ -21,9 +20,17 @@ class App(object):
         head = urwid.AttrMap(listbox.show_key, 'header')
         top = urwid.Frame(listbox, head)
 
-        loop = urwid.MainLoop(top, self.get_pallette(), input_filter=listbox.show_all_input, 
-                unhandled_input=listbox.exit_on_cr)
+        loop = urwid.MainLoop(top, self.get_pallette(), input_filter=listbox.show_all_input,
+                                unhandled_input=listbox.on_keypress)
         loop.run()
+
+        top.set_body(urwid.Text("HAHA YOU HAVE BEEN H4cKed"))
+        loop.draw_screen()
+
+    def get_log(self):
+        log = GitLog()
+        response = log.get()
+        return response
 
     def get_diff(self):
         diff = GitDiff()
@@ -31,7 +38,7 @@ class App(object):
         return response
 
     def get_pallette(self):
-        palette = [('header', 'white', 'black'),
+        palette = [('header', 'white', 'white', 'standout'),
                    ('normal', 'white', 'black'),
                    ('reveal focus', 'white', 'dark blue', 'standout'),
                    ('diff', 'black', 'dark green', 'standout'),
@@ -40,6 +47,7 @@ class App(object):
         return palette
 
 class LogView(urwid.ListBox):
+
     def __init__(self, content):
         self.content = content
         super(LogView, self).__init__(content)
@@ -49,7 +57,7 @@ class LogView(urwid.ListBox):
             unicode(i) for i in input]))
         return input
 
-    def exit_on_cr(self, input):
+    def on_keypress(self, input):
         if input in ('q', 'Q'):
             raise urwid.ExitMainLoop()
         elif input in [ 'up', 'k' ]:
@@ -71,6 +79,26 @@ class LogView(urwid.ListBox):
 
     def out(self, s):
         self.show_key.set_text(str(s))
+
+class GitLog(object):
+
+    def get(self):
+        log = subprocess.Popen(
+            "git log"
+            , shell=True, stdout=subprocess.PIPE).stdout.read()
+        lines = log.split('\n')
+        return [ self.decorate(line) for line in lines ]
+
+    def decorate(self, text):
+        line = urwid.Text(text)
+        new_map = lambda attr: urwid.AttrMap(line, attr, 'reveal focus')
+        if (re.match('^-', text)):
+            return new_map('deleted')
+        elif (re.match('^\+', text)):
+            return new_map('added')
+        elif (re.match('^log', text)):
+            return new_map('log')
+        return new_map('normal')
 
 class GitDiff(object):
     def get(self):
