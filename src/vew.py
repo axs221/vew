@@ -11,26 +11,30 @@ class App(object):
                 urwid.Text("bar"),
                 urwid.Text("baz")]
 
-        log = self.get_log()
-        content = urwid.SimpleListWalker(log)
-
-        listbox = LogView(content)
-
+        listbox = LogView()
         listbox.show_key = urwid.Text("Press any key", wrap='clip')
+        self.current_listbox = listbox
+
         head = urwid.AttrMap(listbox.show_key, 'header')
-        top = urwid.Frame(listbox, head)
+        self.top = urwid.Frame(listbox, head, focus_part='body')
 
-        loop = urwid.MainLoop(top, self.get_pallette(), input_filter=listbox.show_all_input,
-                                unhandled_input=listbox.on_keypress)
-        loop.run()
+        self.loop = urwid.MainLoop(self.top, self.get_pallette(), input_filter=listbox.show_all_input,
+                                unhandled_input=self.on_keypress)
+        self.loop.run()
 
-        top.set_body(urwid.Text("HAHA YOU HAVE BEEN H4cKed"))
-        loop.draw_screen()
+    def on_keypress(self, input):
+        if (input == 'enter'):
+            listbox = DiffView()
+            listbox.show_key = urwid.Text("Press any key", wrap='clip')
+            self.current_listbox = listbox
+            self.top.contents['body'] = ( listbox, None )
+            self.loop.draw_screen()
+        else:
+            self.current_listbox.on_keypress(input)
 
-    def get_log(self):
-        log = GitLog()
-        response = log.get()
-        return response
+    def gui_clear(self):
+        self.loop.widget = urwid.Filler(urwid.Text(u''))
+        self.loop.draw_screen()
 
     def get_diff(self):
         diff = GitDiff()
@@ -46,11 +50,7 @@ class App(object):
                    ('deleted', 'dark red', 'black')]
         return palette
 
-class LogView(urwid.ListBox):
-
-    def __init__(self, content):
-        self.content = content
-        super(LogView, self).__init__(content)
+class GitView(urwid.ListBox):
 
     def show_all_input(self, input, raw):
         self.show_key.set_text("Pressed: " + " ".join([
@@ -66,21 +66,30 @@ class LogView(urwid.ListBox):
             self.move_down()
 
     def move_down(self):
-        focus_widget, idx = super(LogView, self).get_focus()
+        focus_widget, idx = super(GitView, self).get_focus()
         if idx < len(self.content) - 1:
             idx = idx + 1
             self.set_focus(idx)
 
     def move_up(self):
-        focus_widget, idx = super(LogView, self).get_focus()
+        focus_widget, idx = super(GitView, self).get_focus()
         if idx > 0:
             idx = idx - 1
             self.set_focus(idx)
 
+
+class LogView(GitView):
+
+    def __init__(self):
+        log = self.get()
+        content = urwid.SimpleListWalker(log)
+
+        self.content = content
+        super(LogView, self).__init__(content)
+
+
     def out(self, s):
         self.show_key.set_text(str(s))
-
-class GitLog(object):
 
     def get(self):
         log = subprocess.Popen(
@@ -100,7 +109,15 @@ class GitLog(object):
             return new_map('log')
         return new_map('normal')
 
-class GitDiff(object):
+class DiffView(GitView):
+
+    def __init__(self):
+        log = self.get()
+        content = urwid.SimpleListWalker(log)
+
+        self.content = content
+        super(DiffView, self).__init__(content)
+
     def get(self):
         diff = subprocess.Popen(
             "git diff HEAD^^..HEAD"
