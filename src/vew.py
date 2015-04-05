@@ -1,5 +1,7 @@
 #!/usr/bin/python
 import urwid
+import subprocess
+import re
 
 class App(object):
     def run_app(self):
@@ -8,8 +10,10 @@ class App(object):
                 urwid.Text("bar"),
                 urwid.Text("baz")]
 
+        diff = self.get_diff()
+        print diff
         content = urwid.SimpleListWalker([
-            urwid.AttrMap(w, None, 'reveal focus') for w in items])
+            urwid.AttrMap(w, 'normal', 'reveal focus') for w in diff])
 
         listbox = LogView(content)
 
@@ -21,9 +25,18 @@ class App(object):
                 unhandled_input=listbox.exit_on_cr)
         loop.run()
 
+    def get_diff(self):
+        diff = GitDiff()
+        response = diff.get()
+        return response
+
     def get_pallette(self):
         palette = [('header', 'white', 'black'),
-                  ('reveal focus', 'white', 'dark blue', 'standout')]
+                   ('normal', 'white', 'black'),
+                   ('reveal focus', 'white', 'dark blue', 'standout'),
+                   ('diff', 'black', 'dark green', 'standout'),
+                   ('added', 'dark green', 'black'),
+                   ('deleted', 'dark red', 'black')]
         return palette
 
 class LogView(urwid.ListBox):
@@ -32,7 +45,6 @@ class LogView(urwid.ListBox):
         super(LogView, self).__init__(content)
 
     def show_all_input(self, input, raw):
-
         self.show_key.set_text("Pressed: " + " ".join([
             unicode(i) for i in input]))
         return input
@@ -59,6 +71,26 @@ class LogView(urwid.ListBox):
 
     def out(self, s):
         self.show_key.set_text(str(s))
+
+class GitDiff(object):
+    def get(self):
+        diff = subprocess.Popen(
+            "git diff HEAD^^..HEAD"
+            , shell=True, stdout=subprocess.PIPE).stdout.read()
+        lines = diff.split('\n')
+        return [ self.decorate(line) for line in lines ]
+
+    def decorate(self, text):
+        line = urwid.Text(text)
+        new_map = lambda attr: urwid.AttrMap(line, attr, 'reveal focus')
+        if (re.match('^-', text)):
+            return new_map('deleted')
+        elif (re.match('^\+', text)):
+            return new_map('added')
+        elif (re.match('^diff', text)):
+            return new_map('diff')
+        return new_map('normal')
+       
 
 if __name__ == '__main__':
     app = App()
