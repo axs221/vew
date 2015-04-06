@@ -2,6 +2,7 @@
 import urwid
 import subprocess
 import re
+from Queue import LifoQueue
 
 class App(object):
 
@@ -24,6 +25,7 @@ class App(object):
 
     def on_keypress(self, input):
         if (input == 'enter'):
+            # TODO: Move this to LogView.on_keypress. Use LifoQueue in place of self.current_listbox
             listbox = DiffView(self.current_listbox.content[self.current_listbox.focus_position].commit)
             listbox.show_key = urwid.Text("Press any key", wrap='clip')
             self.current_listbox = listbox
@@ -49,6 +51,11 @@ class App(object):
                    ('added', 'dark green', 'black'),
                    ('deleted', 'dark red', 'black')]
         return palette
+
+class ViewController(object):
+    def __init__(self):
+        self.current_listbox = None
+        self.last_listbox_stack = LifoQueue()
 
 class GitView(urwid.ListBox):
 
@@ -80,14 +87,20 @@ class GitView(urwid.ListBox):
 class LogLinesBuilder(object):
     def __init__(self):
         self.lines = []
-        self.current_commit = 'd843714290be3cdb50ba1d5c80da06971051bb09'
+        self.current_commit = ''
 
     def add_line(self, text):
+        self.parse_line(text)
         decorated = self.decorate(text)
         decorated.commit = self.current_commit
         self.lines.append(decorated)
         return self
 
+    def parse_line(self, text):
+        commit_match = re.match('^commit\s+(\w+)', text)
+        if commit_match:
+            self.current_commit = commit_match.group(1)
+            
     def build(self):
         lines = self.lines
         self.lines = []
@@ -136,6 +149,9 @@ class LogView(GitView):
         builder = LogLinesBuilder()
         [ builder.add_line(line) for line in lines ]
         return builder.build()
+
+    def on_keypress(self, input):
+        super(LogView, self).on_keypress(input)
 
 class DiffView(GitView):
 
