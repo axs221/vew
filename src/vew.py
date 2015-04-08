@@ -9,13 +9,21 @@ class ViewManager(object):
     def __init__(self):
         self.main_frame = None
         self.current_view = None
+        self.last_view_stack = LifoQueue()
 
     def start(self):
-        self._loop = urwid.MainLoop(self.main_frame, self.get_pallette(), input_filter=self.current_view.show_all_input,
-                                unhandled_input=self.on_keypress)
+        self._loop = urwid.MainLoop(self.main_frame, self.get_pallette(), unhandled_input=self.on_keypress)
         self._loop.run()
 
     def change_view(self, view):
+        self.last_view_stack.put(self.current_view)
+        self._update_view(view)
+
+    def close_current_view(self):
+        view = self.last_view_stack.get()
+        self._update_view(view)
+
+    def _update_view(self, view):
         self.current_view = view
         self.main_frame.contents['body'] = ( view, None )
         self._loop.draw_screen()
@@ -24,7 +32,7 @@ class ViewManager(object):
         self.current_view.on_keypress(input)
 
     def get_pallette(self):
-        palette = [('header', 'white', 'white', 'standout'),
+        palette = [('header', 'black', 'dark green', 'standout'),
                    ('normal', 'white', 'black'),
                    ('reveal focus', 'white', 'dark blue', 'standout'),
                    ('diff', 'black', 'dark green', 'standout'),
@@ -59,22 +67,12 @@ class App(object):
         self.view_manager.main_frame = urwid.Frame(view, head, focus_part='body')
 
 
-class ViewController(object):
-    def __init__(self):
-        self.current_listbox = None
-        self.last_listbox_stack = LifoQueue()
-
 class GitView(urwid.ListBox):
 
     def __init__(self, parameters_manager, view_manager, content):
         self.parameters_manager = parameters_manager
         self.view_manager = view_manager
         super(GitView, self).__init__(content)
-
-    def show_all_input(self, input, raw):
-        self.show_key.set_text("Pressed: " + " ".join([
-            unicode(i) for i in input]))
-        return input
 
     def on_keypress(self, input):
         if input in ('q', 'Q'):
@@ -167,23 +165,41 @@ class LogView(GitView):
         return builder.build()
 
     def on_keypress(self, input):
+        if input == 'h':
+            self.add_to_diff(input)
         if input == 'enter':
-            if self.selected_commit:
-                listbox = None
-                previously_selected_commit = self.selected_commit
-                newly_selected_commit = self.content[self.focus_position].commit
-                if previously_selected_commit == newly_selected_commit:
-                    listbox = DiffView(self.view_manager, newly_selected_commit, 'HEAD')
-                else:
-                    listbox = DiffView(self.view_manager, previously_selected_commit, newly_selected_commit)
-
-                self.view_manager.change_view(listbox)
-            else: 
-                show_key = self.view_manager.current_view.show_key
-                self.selected_commit = self.content[self.focus_position].commit
-                show_key.set_text("Press enter on another commit, or enter here again to compare to HEAD\nCommit: " + self.selected_commit)
+            self.add_to_diff(input)
+        elif input == 'c':
+            show_key = self.view_manager.current_view.show_key
+            self.selected_commit = None
+            show_key.set_text("Press any key")
         else:
             super(LogView, self).on_keypress(input)
+
+    def add_to_diff(self, input):
+        if self.selected_commit or input == 'h':
+            listbox = None
+
+            if input == 'h':
+                previously_selected_commit = 'HEAD'
+                newly_selected_commit = None
+            else:
+                previously_selected_commit = self.selected_commit
+                newly_selected_commit = self.content[self.focus_position].commit
+
+            self.show_diff(previously_selected_commit, newly_selected_commit)
+        else: 
+            show_key = self.view_manager.current_view.show_key
+            self.selected_commit = self.content[self.focus_position].commit
+            show_key.set_text("Press enter on another commit, or enter here again to compare to HEAD\nCommit: " + self.selected_commit)
+
+    def show_diff(self, before_commit, after_commit):
+        if before_commit == after_commit:
+            listbox = DiffView(self.parameters_manager, self.view_manager, after_commit, 'HEAD')
+        else:
+            listbox = DiffView(self.parameters_manager, self.view_manager, before_commit, after_commit)
+
+        self.view_manager.change_view(listbox)
 
 class DiffView(GitView):
 
@@ -198,12 +214,21 @@ class DiffView(GitView):
         super(DiffView, self).__init__(parameters_manager, view_manager, content)
 
     def get(self):
-        filename = self.parameters_manager.filename  # Note that filename may be empty
-        diff = subprocess.Popen(
-            "git diff " + filename + " " + self.first_commit + ".." + self.second_commit
-            , shell=True, stdout=subprocess.PIPE).stdout.read()
+        command = self.build_command()
+
+        diff = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE).stdout.read()
         lines = diff.split('\n')
         return [ self.decorate(line) for line in lines ]
+
+    def build_command(self):
+        filename = self.parameters_manager.filename  # Note that filename may be empty
+
+        command = "git diff " + self.first_commit
+        if self.second_commit:
+            command += ".." + self.second_commit
+        command += " " + filename
+
+        return command
 
     def decorate(self, text):
         line = urwid.Text(text)
@@ -215,6 +240,10 @@ class DiffView(GitView):
         elif (re.match('^diff', text)):
             return new_map('diff')
         return new_map('normal')
+
+    def on_keypress(self, input):
+        if input == 'q':
+            self.view_manager.close_current_view()
 
 
 if __name__ == '__main__':
