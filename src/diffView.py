@@ -47,3 +47,5 @@ class DiffView(GitView):
     def on_keypress(self, input):
         if input == 'q':
             self.view_manager.close_current_view()
+        else:
+            super(DiffView, self).on_keypress(input)
