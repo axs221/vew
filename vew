@@ -25,9 +25,9 @@
 #
 
 import sys
-from src.vew import App
+from src.vew import Vew
 
 if __name__ == '__main__':
     # vew.main(sys.argv[1:])
-    app = App()
-    app.run_app()
+    vew = Vew()
+    vew.run_app()
